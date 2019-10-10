@@ -18,6 +18,7 @@ import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.View;
@@ -51,36 +52,89 @@ public class SwipePanel extends FrameLayout {
     public @interface Direction {
     }
 
+    /**
+     * 认为是侧滑的进度值，也就是说大于这个值，则认为是侧滑，反之，则取消侧滑
+     */
     private static final float TRIGGER_PROGRESS = 0.95f;
 
     private int mWidth;
     private int mHeight;
 
     private Paint mPaint;
-
+    /**
+     * 侧滑的长边的一半
+     */
     private float halfSize;
+
     private float unit;
-
+    /**
+     * 滑动的最小距离
+     */
     private int mTouchSlop;
-
+    /**
+     * 路径数组
+     */
     private Path[] mPath = new Path[4];
+    /**
+     * 画笔颜色数组
+     */
     private int[] mPaintColor = new int[4];
+    /**
+     * 触发侧滑边缘阈值的数组
+     */
     private int[] mEdgeSizes = new int[4];
+    /**
+     * 图片数组
+     */
     private Drawable[] mDrawables = new Drawable[4];
+    /**
+     * 标记是否可以开始侧滑的数组
+     */
     private boolean[] mIsStart = new boolean[4];
+    /**
+     * 侧滑中心线出现的位置数组
+     */
     private float[] mDown = new float[4];
+    /**
+     * 侧滑进度数组，可以理解为拉开的幅度大小，取值在[0f,1f]
+     */
     private float[] progresses = new float[4];
+    /**
+     * 上一次的侧滑进度数组，可以理解为拉开的幅度大小，取值在[0f,1f]
+     */
     private float[] preProgresses = new float[4];
+    /**
+     * 用于标记某个方向的侧滑是否居中，默认是 false，不居中
+     */
     private boolean[] mIsCenter = new boolean[4];
+    /**
+     * 用于标记是否开启某个方向的侧滑，默认是开启的
+     */
     private boolean[] mEnabled = {true, true, true, true};
-
+    /**
+     * 手指按下点的 X 坐标
+     */
     private float mDownX;
+    /**
+     * 手指按下点的 Y 坐标
+     */
     private float mDownY;
+    /**
+     * 手指当前点的 X 坐标
+     */
     private float mCurrentX;
+    /**
+     * 手指当前点的 Y 坐标
+     */
     private float mCurrentY;
     private Rect mRect = new Rect();
-
+    /**
+     * 标记至少有一个方向侧滑满足，true；没有任何一个侧滑满足，false
+     */
     private boolean mIsEdgeStart;
+    /**
+     * 记录侧滑方向，初始值是 -1，可取的值有 LEFT(0),TOP(1),RIGHT(2),BOTTOM(3)
+     */
     private int mStartDirection = -1;
 
     private int mLimit;
@@ -345,6 +399,7 @@ public class SwipePanel extends FrameLayout {
     }
 
     private void drawPath(Canvas canvas, int direction) {
+        // 判断当前的侧滑方法是哪个
         if (mPath[direction] == null || progresses[direction] <= 0) return;
         updatePaint(direction);
         canvas.drawPath(getPath(direction), mPaint);
@@ -354,8 +409,9 @@ public class SwipePanel extends FrameLayout {
     private Path getPath(int direction) {
         if (preProgresses[direction] != progresses[direction]) {
             mPath[direction].reset();
-            float edge, pivot = mDown[direction];
-            int mark;
+            float edge; // 边缘的值
+            float pivot = mDown[direction]; // 轴线的位置
+            int mark; // 1 表示正方向，-1 表示负方向
             if (direction == LEFT) {
                 edge = 0;
                 mark = 1;
@@ -444,11 +500,16 @@ public class SwipePanel extends FrameLayout {
             curPathY = pathX;
         }
         mPath[direction].quadTo(preX, preY, (preX + curPathX) / 2, (preY + curPathY) / 2);
+//        mPath[direction].lineTo(curPathX, curPathY);
     }
 
     private float curPathX;
     private float curPathY;
 
+    /**
+     * 更新画笔颜色和透明度
+     * @param direction
+     */
     private void updatePaint(int direction) {
         mPaint.setColor(mPaintColor[direction]);
         float alphaProgress = progresses[direction];
@@ -498,6 +559,7 @@ public class SwipePanel extends FrameLayout {
             mIsStart[BOTTOM] = mEnabled[BOTTOM] && mDrawables[BOTTOM] != null && !isOpen(BOTTOM) && mDownY >= getHeight() - mEdgeSizes[BOTTOM];
             mIsEdgeStart = mIsStart[LEFT] || mIsStart[TOP] || mIsStart[RIGHT] || mIsStart[BOTTOM];
             if (mIsEdgeStart) {
+                // 重置侧滑方向的标记
                 mStartDirection = -1;
             }
             return true;
@@ -507,18 +569,23 @@ public class SwipePanel extends FrameLayout {
                 mCurrentX = ev.getX();
                 mCurrentY = ev.getY();
                 if (mStartDirection == -1) {
+                    // 侧滑方向还未确定
                     float deltaX = mCurrentX - mDownX;
                     float deltaY = mCurrentY - mDownY;
                     float disX = Math.abs(deltaX);
                     float disY = Math.abs(deltaY);
+                    // 判断至少有一个方向的滑动距离大于最小的滑动距离
                     if (disX > mTouchSlop || disY > mTouchSlop) {
+                        // 判断纵向滑动距离大还是横向滑动距离大
                         if (disX >= disY) {
+                            // 横向滑动距离大些
                             if (mIsStart[LEFT] && deltaX > 0) {
                                 decideDirection(LEFT);
                             } else if (mIsStart[RIGHT] && deltaX < 0) {
                                 decideDirection(RIGHT);
                             }
                         } else {
+                            // 纵向滑动距离大些
                             if (mIsStart[TOP] && deltaY > 0) {
                                 decideDirection(TOP);
                             } else if (mIsStart[BOTTOM] && deltaY < 0) {
@@ -528,10 +595,14 @@ public class SwipePanel extends FrameLayout {
                     }
                 }
                 if (mStartDirection != -1) {
+                    // 侧滑方向已经确定
                     float preProgress = preProgresses[mStartDirection];
                     preProgresses[mStartDirection] = progresses[mStartDirection];
-                    progresses[mStartDirection] = calculateProgress();
+                    float progress = calculateProgress();
+                    Log.d(TAG, "MOVE: progress = " + progress);
+                    progresses[mStartDirection] = progress;
                     if (Math.abs(preProgress - progresses[mStartDirection]) > 0.01) {
+                        // 刷新
                         postInvalidate();
                         if (mProgressListener != null) {
                             mProgressListener.onProgressChanged(mStartDirection, progresses[mStartDirection], true);
@@ -544,7 +615,9 @@ public class SwipePanel extends FrameLayout {
                 if (mStartDirection != -1) {
                     mCurrentX = ev.getX();
                     mCurrentY = ev.getY();
-                    progresses[mStartDirection] = calculateProgress();
+                    float progress = calculateProgress();
+                    Log.d(TAG, "UP/CANCEL: progress = " + progress);
+                    progresses[mStartDirection] = progress;
                     if (isOpen(mStartDirection)) {
                         if (mListener != null) {
                             mListener.onFullSwipe(mStartDirection);
@@ -558,6 +631,10 @@ public class SwipePanel extends FrameLayout {
         return true;
     }
 
+    /**
+     * 确定方向信息
+     * @param direction
+     */
     private void decideDirection(int direction) {
         if (direction == LEFT || direction == RIGHT) {
             if (mIsCenter[direction]) {
@@ -590,6 +667,7 @@ public class SwipePanel extends FrameLayout {
         }
         preProgresses[direction] = 0;
         cancelChildViewTouch();
+        // 为什么这句写不写都一样的效果呢？
         requestDisallowInterceptTouchEvent(true);
     }
 
@@ -613,6 +691,9 @@ public class SwipePanel extends FrameLayout {
         }
     }
 
+    /**
+     * 取消子 View 的触摸事件
+     */
     private void cancelChildViewTouch() {
         final long now = SystemClock.uptimeMillis();
         final MotionEvent cancelEvent = MotionEvent.obtain(now, now,
